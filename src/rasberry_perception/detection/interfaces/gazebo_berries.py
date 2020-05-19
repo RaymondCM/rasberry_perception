@@ -42,6 +42,7 @@ class GazeboRenderedBerriesServer(BaseDetectionServer):
         self.keyword    = keyword
         self.ref_frame  = ref_frame
         self.obj_poses  = []
+        self.obj_ids    = [] 
         self.states_sub = rospy.Subscriber("/gazebo/link_states", 
                                            LinkStates, self.states_cb)
         self.tf_buffer = tf2_ros.Buffer()
@@ -52,12 +53,14 @@ class GazeboRenderedBerriesServer(BaseDetectionServer):
 
     def states_cb(self, links):
         # Get objects of interest
-        self.obj_poses  = []
+        self.obj_poses = []
+        self.obj_ids   = [] 
         for idx, name in enumerate(links.name):
           if self.keyword in name:
             pose = PoseStamped()
             pose.pose = links.pose[idx]
             self.obj_poses.append(pose)
+            self.obj_ids.append(idx)
 
     @function_timer.interval_logger(interval=10)
     def get_detector_results(self, request):
@@ -99,12 +102,12 @@ class GazeboRenderedBerriesServer(BaseDetectionServer):
             self.currently_busy.clear()
 
             # Fill in the detections message
-            for roi in rois:
+            for roi, pose, track_id in zip(rois, poses, self.obj_ids):
                 seg_roi = SegmentOfInterest(x=[], y=[])
                 score = 1.0
                 detections.objects.append(Detection(roi=roi, seg_roi=seg_roi, 
                                                     pose_frame_id=self.ref_frame, pose=pose,
-                                                    id=self._new_id(),
+                                                    id=self._new_id(), track_id=track_id,
                                                     confidence=score, class_name=self.classes[0]))
 
             return GetDetectorResultsResponse(status=ServiceStatus(OKAY=True), results=detections)
