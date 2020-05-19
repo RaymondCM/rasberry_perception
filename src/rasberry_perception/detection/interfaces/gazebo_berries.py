@@ -81,7 +81,8 @@ class GazeboRenderedBerriesServer(BaseDetectionServer):
                 image = image[..., ::-1]
 
             # Get the bounding boxes/detections for the image here
-            rois = []
+            rois  = []
+            poses = []
             for pose in self.obj_poses:
                 transform = self.tf_buffer.lookup_transform(self.ref_frame, 'odom', rospy.Time())
                 pose = tf2_geometry_msgs.do_transform_pose(pose, transform).pose
@@ -93,6 +94,7 @@ class GazeboRenderedBerriesServer(BaseDetectionServer):
                 z2 = pose.position.z + 0.03
                 roi = RegionOfInterest(x1=x1, y1=y1, z1=z1, x2=x2, y2=y2, z2=z2)
                 rois.append(roi)
+                poses.append(pose)
 
             self.currently_busy.clear()
 
@@ -100,8 +102,10 @@ class GazeboRenderedBerriesServer(BaseDetectionServer):
             for roi in rois:
                 seg_roi = SegmentOfInterest(x=[], y=[])
                 score = 1.0
-                detections.objects.append(Detection(roi=roi, seg_roi=seg_roi, id=self._new_id(),
-                                                    confidence=score, class_name=self.classes[None]))
+                detections.objects.append(Detection(roi=roi, seg_roi=seg_roi, 
+                                                    pose_frame_id=self.ref_frame, pose=pose,
+                                                    id=self._new_id(),
+                                                    confidence=score, class_name=self.classes[0]))
 
             return GetDetectorResultsResponse(status=ServiceStatus(OKAY=True), results=detections)
         except Exception as e:
