@@ -105,8 +105,7 @@ class GazeboRenderedBerriesServer(BaseDetectionServer):
             for roi, pose, track_id in zip(rois, poses, self.obj_ids):
                 seg_roi = SegmentOfInterest(x=[], y=[])
                 score = 1.0
-                detections.objects.append(Detection(roi=roi, seg_roi=seg_roi, 
-                                                    pose_frame_id=self.ref_frame, pose=pose,
+                detections.objects.append(Detection(roi=roi, seg_roi=seg_roi, pose=pose,
                                                     id=self._new_id(), track_id=track_id,
                                                     confidence=score, class_name=self.classes[0]))
 
