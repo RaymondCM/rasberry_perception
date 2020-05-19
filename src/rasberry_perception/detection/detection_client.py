@@ -14,13 +14,13 @@ import numpy as np
 import ros_numpy
 import rospy
 from geometry_msgs.msg import Point, Pose, Quaternion, PoseArray
-from rasberry_perception.msg._TaggedPose import TaggedPose
 from sensor_msgs.msg import Image, CameraInfo
 
 from rasberry_perception.detection import Client, default_service_name
 from rasberry_perception.detection.utility import function_timer, WorkerTaskQueue
 from rasberry_perception.detection.visualisation import Visualiser
-from rasberry_perception.msg import Detections, Detection, RegionOfInterest, SegmentOfInterest, TaggedPoseStampedArray
+from rasberry_perception.msg import Detections, Detection, RegionOfInterest, SegmentOfInterest, TaggedPoseStampedArray,\
+    TaggedPose
 
 
 class RunClientOnTopic:
@@ -134,6 +134,10 @@ class RunClientOnTopic:
         xp = ((valid_positions[1] + x_offset) - _cx) * zp / _fx
         return Pose(position=Point(np.median(xp), np.median(yp), np.median(zp)), orientation=Quaternion(0, 0, 0, 1))
 
+    @staticmethod
+    def __check_pose_empty(p):
+        return all([getattr(o, a, 0) == 0 for a in ["x", "y", "z", "w"] for o in [p.position, p.orientation]])
+
     @function_timer.interval_logger(interval=10)
     def publish_detections(self, image_msg, image_info, depth_msg, depth_info, response):
         """Function to publish detections based on the image data and detector result
@@ -146,10 +150,14 @@ class RunClientOnTopic:
             response (GetDetectorResultsResponse):  The result of a call to the GetDetectorResults service api
         """
         # Filter detections by the score
-        results = Detections(camera_frame=image_msg, camera_info=image_info)
+        results = response.results
         results.objects = [d for d in response.results.objects if d.confidence >= self.score_thresh]
-        for o in results.objects:
-            o.track_id = -1  # Signify this is not a tracked object
+        results.camera_frame = image_msg  # TODO: Is it safe to assume the detection server won't add weird things here?
+        results.camera_info = image_info
+        # TODO: Is it safe to assume if all tracks have id==0 then they're not tracks?
+        if len(results.objects) > 1 and all([d.track_id == 0 for d in results.objects]):
+            for o in results.objects:
+                o.track_id = -1  # Signify this is not a tracked object
 
         # Uncomment this line for dummy detections
         # results.objects.extend(self._get_test_messages(depth_msg.height, depth_msg.width))
@@ -179,11 +187,14 @@ class RunClientOnTopic:
                 xv, yv = np.meshgrid(np.arange(int(roi.x1), int(roi.x2)), np.arange(int(roi.y1), int(roi.y2)))
                 d_roi = depth_image[yv, xv]  # For bbox the x, y, z pos is based on median of valid depth pixels
                 valid_idx = np.where(np.logical_and(d_roi != 0, np.isfinite(d_roi)))
-                if len(valid_idx[0]) and len(valid_idx[1]):
-                    box_pose = self._get_pose(d_roi, valid_idx, roi.x1, roi.y1, fx, fy, cx, cy)
-                    results.objects[i].pose = box_pose
-                    results.objects[i].pose_frame_id = depth_msg.header.frame_id
 
+                infer_pose_from_depth = self.__check_pose_empty(results.objects[i].pose)
+                if len(valid_idx[0]) and len(valid_idx[1]):
+                    box_pose = results.objects[i].pose
+                    if infer_pose_from_depth:
+                        box_pose = self._get_pose(d_roi, valid_idx, roi.x1, roi.y1, fx, fy, cx, cy)
+                        results.objects[i].pose = box_pose
+                        results.objects[i].pose_frame_id = depth_msg.header.frame_id
                     tagged_bbox_poses.poses.append(TaggedPose(tag=label, pose=box_pose))
                     poses[label]["bbox"].poses.append(box_pose)
                 if self.visualisation_enabled:
@@ -201,9 +212,12 @@ class RunClientOnTopic:
                     zp = d_roi[valid_idx[0]] / 1000.0
                     yp = (np.asarray(segm.y)[valid_idx[0]] - cy) * zp / fy
                     xp = (np.asarray(segm.x)[valid_idx[0]] - cx) * zp / fx
-                    segm_pose = Pose(position=Point(np.median(xp), np.median(yp), np.median(zp)), orientation=Quaternion(0, 0, 0, 1))
+                    segm_pose = Pose(position=Point(np.median(xp), np.median(yp), np.median(zp)),
+                                     orientation=Quaternion(0, 0, 0, 1))
                     tagged_segm_poses.poses.append(TaggedPose(tag=label, pose=segm_pose))
                     poses[label]["segm"].poses.append(segm_pose)
+                    if infer_pose_from_depth:
+                        results.objects[i].pose = segm_pose  # should be more accurate so use this as default
 
             # Publish depth poses and 1:1 depth map
             self._publish_poses(poses, tagged_bbox_poses, tagged_segm_poses)
@@ -284,7 +298,6 @@ def _get_detections_for_topic():
         p_image_ns, p_depth_ns, p_score
     ))
 
-    # TODO: Re-implement depth for now leave as None
     detector = RunClientOnTopic(image_namespace=p_image_ns, depth_namespace=p_depth_ns, score_thresh=p_score,
                                 visualisation_enabled=p_vis, service_name=service_name)
     rospy.spin()
