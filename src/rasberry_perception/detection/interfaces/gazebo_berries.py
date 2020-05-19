@@ -79,11 +79,6 @@ class GazeboRenderedBerriesServer(BaseDetectionServer):
         detections = Detections()
 
         try:
-            image = ros_numpy.numpify(request.image)
-            if request.image.encoding == "rgb8":
-                image = image[..., ::-1]
-
-            # Get the bounding boxes/detections for the image here
             rois  = []
             poses = []
             for pose in self.obj_poses:
