@@ -13,7 +13,7 @@ password=$2
 declare -A docker_hub
 docker_hub["rasberry_perception:detectron2"]="n6rXP3oQpbjX9di:${password}"
 docker_hub["rasberry_perception:fruit_reid"]="DqS38eHzLGbHpqR:${password}"
-docker_hub["rasberry_perception:fruitcast"]="irB4bE5AnEGWGZY:${password}"
+docker_hub["rasberry_perception:fruitcast"]="JmGSyfHTK7sorGC:${password}"
 
 echo "Looking for docker image '${image_name}' locally"
 
